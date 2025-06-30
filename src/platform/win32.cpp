@@ -4,9 +4,8 @@
 #include <string>
 #include <algorithm>
 
-#include <spdlog/spdlog.h>
-#include <SDL.h>
-#include <SDL_syswm.h>
+#include "../logger.hpp"
+#include <SDL3/SDL.h>
 
 #include "../main.hpp"
 #include "platform.hpp"
@@ -20,10 +19,17 @@ struct KeycodeConversion {
     UINT win;
 };
 
-extern Display display;
-HANDLE child_process            = nullptr;
-bool has_shutdown_privilege     = false;
-UINT exit_hotkey                = 0;
+HANDLE child_process = nullptr;
+bool has_shutdown_privilege = false;
+UINT exit_hotkey = 0;
+HWND hwnd = 0;
+
+void set_hwnd(SDL_Window &window)
+{
+    hwnd = reinterpret_cast<HWND>(SDL_GetPointerProperty(SDL_GetWindowProperties(&window), SDL_PROP_WINDOW_WIN32_HWND_POINTER, NULL));
+    if (!hwnd)
+        BL::logger::critical("Failed to get window handle");
+}
 
 static void parse_command(const std::string &command, std::string &file, std::string &params)
 {
@@ -82,13 +88,12 @@ bool start_process(const std::string &command, bool application)
     else {
         // Go down in the window stack so the launched application can take focus
         if (successful) {
-            HWND hwnd = display.wm_info.info.win.window;
             SetWindowPos(hwnd, HWND_NOTOPMOST, 0, 0, 0, 0, SWP_NOREDRAW | SWP_NOSIZE | SWP_NOMOVE);
             child_process = info.hProcess;
             ret = true;
         }
         else {
-            spdlog::error("Failed to launch command");
+            BL::logger::error("Failed to launch command");
             ret = false;
         }
     }
@@ -104,7 +109,7 @@ bool process_running()
 
 void set_foreground_window()
 {
-    SetForegroundWindow(display.wm_info.info.win.window);
+    SetForegroundWindow(hwnd);
 }
 
 // A function to shutdown the computer
@@ -156,13 +161,13 @@ static bool get_shutdown_privilege()
     HANDLE token = nullptr;
     BOOL ret = OpenProcessToken(GetCurrentProcess(), TOKEN_ADJUST_PRIVILEGES, &token);
     if (!ret) {
-        spdlog::error("Could not open process token");
+        BL::logger::error("Could not open process token");
         return false;
     }
     LUID luid;
     ret = LookupPrivilegeValueA(nullptr, SE_SHUTDOWN_NAME, &luid);
     if (!ret) {
-        spdlog::error("Failed to lookup privilege");
+        BL::logger::error("Failed to lookup privilege");
         CloseHandle(token);
         return false;
     }
@@ -172,7 +177,7 @@ static bool get_shutdown_privilege()
     tp.Privileges[0].Attributes = SE_PRIVILEGE_ENABLED;
     ret = AdjustTokenPrivileges(token, FALSE, &tp, sizeof(TOKEN_PRIVILEGES), nullptr, nullptr);
     if (!ret) {
-        spdlog::error("Failed to adjust token privileges");
+        BL::logger::error("Failed to adjust token privileges");
         CloseHandle(token);
         return false;
     }
@@ -194,31 +199,30 @@ void set_exit_hotkey(SDL_Keycode keycode)
         return;
     exit_hotkey = sdl_to_win32_keycode(keycode);
     if (!exit_hotkey)
-        spdlog::error("Invalid exit hotkey keycode %X", keycode);
+        BL::logger::error("Invalid exit hotkey keycode %X", keycode);
 }
 
 // A function to register the exit hotkey with Windows
 void register_exit_hotkey()
 {
-    BOOL ret = RegisterHotKey(display.wm_info.info.win.window, 1, 0, exit_hotkey);
+    BOOL ret = RegisterHotKey(hwnd, 1, 0, exit_hotkey);
     if (!ret) {
         exit_hotkey = 0;
-        spdlog::error("Failed to register exit hotkey with Windows");
+        BL::logger::error("Failed to register exit hotkey with Windows");
     }
 }
 
 // A function to check if the exit hotkey was pressed, and close the active window if so
-void check_exit_hotkey(SDL_SysWMmsg *msg)
+bool close_foreground_window()
 {
-    if (msg->msg.win.msg == WM_HOTKEY) {
-        spdlog::debug("Exit hotkey detected");
-        HWND hwnd = GetForegroundWindow();
-        if (hwnd == nullptr) {
-            spdlog::error("Could not get top window");
-            return;
-        }
-        PostMessage(hwnd, WM_CLOSE, 0, 0);
+    BL::logger::debug("Exit hotkey detected");
+    HWND fg_hwnd = GetForegroundWindow();
+    if (fg_hwnd == nullptr) {
+        BL::logger::error("Could not get top window");
+        return false;
     }
+    PostMessage(fg_hwnd, WM_CLOSE, 0, 0);
+    return true;
 }
 
 // A function to convert an SDL keycode to a WIN32 virtual keycode

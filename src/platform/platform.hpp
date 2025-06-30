@@ -1,5 +1,8 @@
 #pragma once
 
+#include <string>
+#include <SDL3/SDL.h>
+
 bool start_process(const std::string &command, bool application);
 bool process_running();
 
@@ -16,6 +19,7 @@ void scmd_sleep();
 bool has_exit_hotkey();
 void set_exit_hotkey(SDL_Keycode keycode);
 void register_exit_hotkey();
-void check_exit_hotkey(SDL_SysWMmsg *msg);
+bool close_foreground_window();
 void set_foreground_window();
+void set_hwnd(SDL_Window& window);
 #endif

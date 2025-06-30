@@ -32,6 +32,9 @@ permissions:
   security-events: none
   statuses: read
 
+env:
+  VCPKG_COMMITTISH: ef7dbf94b9198bc58f45951adcf1f041fcbc5ea0
+
 jobs:
   build_windows:
     name: Windows
@@ -42,7 +45,7 @@ jobs:
     env:
       CMAKE_BUILD_TYPE: Release
       CMAKE_GENERATOR: Visual Studio 17 2022
-      VCPKG_TRIPLET: x64-windows-static
+      VCPKG_TRIPLET: x64-windows-release
 
     steps:
       - name: Checkout Git repository
@@ -51,10 +54,11 @@ jobs:
           submodules: true
 
       - uses: friendlyanon/setup-vcpkg@v1
-        with: { committish: ce613c41372b23b1f51333815feb3edd87ef8a8b }
+        with:
+          committish: ${{env.VCPKG_COMMITTISH}} 
 
       - name: Configure
-        run: cmake -B build -G "${{env.CMAKE_GENERATOR}}" -D "CMAKE_TOOLCHAIN_FILE=$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake" -DVCPKG_TARGET_TRIPLET=${{env.VCPKG_TRIPLET}}
+        run: cmake -S . -B build -G "${{env.CMAKE_GENERATOR}}" -D "CMAKE_TOOLCHAIN_FILE=$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake" -DVCPKG_TARGET_TRIPLET=${{env.VCPKG_TRIPLET}}
 
       - name: Download assets
         uses: suisei-cn/actions-download-file@v1.3.0

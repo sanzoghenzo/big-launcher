@@ -3,8 +3,8 @@
 #include <signal.h>
 #include <string>
 #include <vector>
-#include <SDL.h>
-#include <spdlog/spdlog.h>
+#include <SDL3/SDL.h>
+#include "../logger.hpp"
 #include "platform.hpp"
 
 pid_t child_pid;
@@ -15,7 +15,7 @@ bool start_process(const std::string &command, bool application)
     child_pid = fork();
     switch(child_pid) {
         case -1:
-            spdlog::error("Could not fork new process");
+            BL::logger::error("Could not fork new process");
             return false;
 
         // Child process

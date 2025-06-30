@@ -1,37 +1,51 @@
 #pragma once
 
-#include <SDL_mixer.h>
+#include <string>
+#include <mutex>
+#include <SDL3/SDL.h>
 
-#define MAX_VOLUME 10
-#define RANGE_DB -40
-
-
-class Sound {
+namespace BL {
+    class SoundFile {  
     private:
-        struct Chunk {
-            Mix_Chunk *chunk = nullptr;
-            int frequency = -1;
-            int channels = -1;
-
-            bool load(const std::string &path, int frequency, int channels);
-            void free_chunk();
-        };
-
-        std::string click_path;
-        std::string select_path;
-        Chunk click;
-        Chunk select;
-        int frequency = -1;
-        int channels = -1;
-
+        Uint8 *buffer = nullptr;
+        Uint32 len = 0;
+        Uint32 pos = 0;
     public:
-        bool connected = false;
+        SoundFile(const std::string &path);
+        ~SoundFile();
 
-        bool init();
-        bool connect();
-        void set_volume(int channel, int log_volume);
-        void disconnect();
-        void play_click();
-        void play_select();
+        const Uint8* get_buffer() const { return buffer; }
+        Uint32 get_len() const { return len; }
+        Uint32 get_pos() const { return pos; }
+        void inc_pos(Uint32 delta_pos) { pos += delta_pos; if (pos >= len) pos = 0; }
+        void reset_pos() { pos = 0; }
+    };
+    class Sound {
+        private:
+            enum State {
+                IDLE,
+                CLICK_PLAYING,
+                SELECT_PLAYING
+            };
+            SoundFile *click = nullptr;
+            SoundFile *select = nullptr;
+            SoundFile *current_file = nullptr;
+            SDL_AudioStream *stream = nullptr;
+            State state = State::IDLE;
+            std::mutex mutex;
 
-};
+            void set_current_file(SoundFile &file);
+
+        public:
+
+            Sound();
+            ~Sound();
+            static void callback(void *userdata, SDL_AudioStream *stream, int additional_amount, int total_amount);
+            void put_data(int amount);
+            bool connect();
+            void disconnect();
+            void play_click();
+            void play_select();
+    };
+}
+

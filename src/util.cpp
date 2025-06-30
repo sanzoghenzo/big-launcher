@@ -1,138 +1,20 @@
 #include <filesystem>
-#include <span>
-#include <initializer_list>
 #include <string>
 #include <string_view>
-#include <string.h>
-#include <SDL.h>
-#include <fmt/core.h>
-#include <spdlog/spdlog.h>
-#include <ini.h>
+#include <cstring>
+#include <SDL3/SDL.h>
+#include "logger.hpp"
 #include <lconfig.h>
 #include "sound.hpp"
 #include "main.hpp"
 #include "util.hpp"
-#include "screensaver.hpp"
+#include "gamepad.hpp"
+#include "config.hpp"
 
-extern "C" int handler(void* user, const char* section, const char* name, const char* value);
-extern Config config;
-extern char *executable_dir;
-
-void Config::parse(const std::string &file, Gamepad &gamepad, HotkeyList &hotkey_list)
-{
-    ConfigInfo info = {gamepad, hotkey_list};
-    spdlog::debug("Parsing config file '{}'", file);
-    if (ini_parse(file.c_str(), handler, (void*) &info) < 0) {
-        spdlog::critical("Failed to parse config file");
-        quit(EXIT_FAILURE);
-    }
-    spdlog::debug("Sucessfully parsed config file");
-}
-
-void Config::add_bool(const char *value, bool &out)
-{
-    if (MATCH(value, "true") || MATCH(value, "True"))
-        out = true;
-    else if (MATCH(value, "false") || MATCH(value, "False"))
-        out = false;
-}
-
-void Config::add_int(const char *value, int &out)
-{
-    int x = std::stoi(value);
-    if (x || *value == '0')
-        out = x;
-}
-
-void Config::add_time(const char *value, Uint32 &out, Uint32 min, Uint32 max)
-{
-    int x = std::stoi(value) * 1000;
-    if ((x || *value == '0') && x >= min && x <= max)
-        out = x;
-}
-
-void Config::add_path(const char *value, std::string &out)
-{
-    out = value;
-
-    // Remove double quotes
-    if (*out.begin() == '"' && *(out.end() - 1) == '"')
-        out = out.substr(1, out.size() - 2);
-}
-
-template <typename T>
-void Config::add_percent(const char *value, T &out, T ref, float min, float max)
-{
-    std::string_view string = value;
-    if (string.back() != '%')
-        return;
-    float percent = atof(std::string(string, 0, string.size() - 1).c_str()) / 100.0f;
-    if (percent == 0.0f && strcmp(value, "0%"))
-        return;
-    if (percent < min)
-        percent = min;
-    else if (percent > max)
-        percent = max;
-    
-    out = static_cast<T>(percent * static_cast<float>(ref));
-}
-
-int handler(void* user, const char* section, const char* name, const char* value)
-{
-    if (MATCH(section, "Settings")) {
-        if (MATCH(name, "MouseSelect"))
-            config.add_bool(value, config.mouse_select);
-        else if (MATCH(name, "SidebarHighlightColor"))
-            hex_to_color(value, config.sidebar_highlight_color);
-        else if (MATCH(name, "SidebarTextColor"))
-            hex_to_color(value, config.sidebar_text_color);
-        else if (MATCH(name, "SidebarTextSelectedColor"))
-            hex_to_color(value, config.sidebar_text_color_highlighted);
-        else if (MATCH(name, "MenuHighlightColor"))
-            hex_to_color(value, config.menu_highlight_color);
-        else if (MATCH(name, "BackgroundImage"))
-            config.add_path(value, config.background_image_path);
-    }
-
-    else if (MATCH(section, "Sound")) {
-        if (MATCH(name, "Enabled"))
-            config.add_bool(value, config.sound_enabled);
-        else if (MATCH(name, "Volume"))
-            config.add_int(value, config.sound_volume);
-    }
-
-    else if (MATCH(section, "Screensaver")) {
-        if (MATCH(name, "Enabled"))
-            config.add_bool(value, config.screensaver_enabled);
-        else if (MATCH(name, "IdleTime"))
-            config.add_time(value, config.screensaver_idle_time, MIN_SCREENSAVER_IDLE_TIME, MAX_SCREENSAVER_IDLE_TIME);
-        else if (MATCH(name, "Intensity"))
-            config.add_percent<Uint8>(value, config.screensaver_intensity, 255, 0.1f, 1.f);
-    }
-
-    else if (MATCH(section, "Hotkeys")) {
-        ConfigInfo *info = (ConfigInfo*) user;
-        info->hotkey_list.add(value);
-    }
-
-    else if (MATCH(section, "Gamepad")) {
-        if (MATCH(name, "Enabled"))
-            config.add_bool(value, config.gamepad_enabled);
-        else if (MATCH(name, "DeviceIndex"))
-            config.add_int(value, config.gamepad_index);
-        else if (MATCH(name, "MappingsFile"))
-            config.add_path(value, config.gamepad_mappings_file);
-        else {
-            ConfigInfo *info = (ConfigInfo*) user;
-            info->gamepad.add_control(name, value);
-        }
-    }
-    return 0;
-}
-
+extern const char *executable_dir;
 
 // Calculates the length of a utf-8 encoded C-style string
-int utf8_length(std::string_view string)
+int BL::utf8_length(std::string_view string)
 {
     int length = 0;
     auto it = string.cbegin();
@@ -152,7 +34,7 @@ int utf8_length(std::string_view string)
 }
 
 // A function to extract the Unicode code point from the first character in a UTF-8 encoded C-style string
-Uint16 get_unicode_code_point(const char *p, int &bytes)
+Uint16 BL::get_unicode_code_point(const char *p, int &bytes)
 {
     Uint16 result;
 
@@ -186,7 +68,7 @@ Uint16 get_unicode_code_point(const char *p, int &bytes)
 }
 
 // A function to truncate a utf-8 encoded string to max number of pixels
-std::string utf8_truncate(const std::string &string, int width, int max_width)
+std::string BL::utf8_truncate(const std::string &string, int width, int max_width)
 {
     int string_length = utf8_length(string);
     int avg_width = width / string_length;
@@ -213,7 +95,7 @@ std::string utf8_truncate(const std::string &string, int width, int max_width)
 }
 
 // A function to convert a hex-formatted string into a color struct
-bool hex_to_color(std::string_view string, SDL_Color &color)
+bool BL::hex_to_color(std::string_view string, SDL_Color &color)
 {
     auto it = string.cbegin();
     if (*it != '#' || string.size() != 7)
@@ -233,88 +115,65 @@ bool hex_to_color(std::string_view string, SDL_Color &color)
     return true;
 }
 
-void join_paths(std::string &out, std::initializer_list<const char*> list)
+template <BL::FileType file_type>
+std::string BL::find_file(const char *filename)
 {
-    if (list.size() < 2)
-        return;
-    std::filesystem::path path;
-    auto it = list.begin();
-    path = *it;
-    it++;
-    for(it; it != list.end(); ++it) {
-        if (*it == nullptr)
-            return;
-        path /= *it;
+    static std::vector<std::filesystem::path> paths;
+    if constexpr(file_type == BL::FileType::CONFIG) {
+        if (!paths.size()) {
+#ifdef __unix__
+            paths.resize(4);
+            paths[0] = CURRENT_DIRECTORY;
+            paths[1] = executable_dir;
+            paths[2] = BL::join_paths(getenv("HOME"), ".config", EXECUTABLE_TITLE);
+            paths[3] = SYSTEM_SHARE_DIR;
+#endif
+#ifdef _WIN32
+            paths.resize(2);
+            paths[0] = ".\\";
+            paths[1] = executable_dir;
+#endif
+        }
     }
-    out = path.string();
+
+    if constexpr(file_type == BL::FileType::FONT) {
+        if (!paths.size()) {
+#ifdef __unix__
+            paths.resize(2);
+            paths[0] = BL::join_paths(executable_dir, "assets", "fonts");
+            paths[1] = SYSTEM_FONTS_DIR;
+
+#endif
+#ifdef _WIN32
+            paths.resize(2);
+            paths[0] = ".\\assets\\fonts";
+            paths[1] = BL::join_paths(executable_dir, "assets", "fonts");
+#endif
+        }
+    }
+
+    if constexpr(file_type == BL::FileType::AUDIO) {
+        if (!paths.size()) {
+#ifdef __unix__
+            paths.resize(2);
+            paths[0] = BL::join_paths(executable_dir, "assets", "sounds");
+            paths[1] = SYSTEM_SOUNDS_DIR;
+
+#endif
+#ifdef _WIN32
+            paths.resize(2);
+            paths[0] = ".\\assets\\sounds";
+            paths[1] = BL::join_paths(executable_dir, "assets", "sounds");
+#endif
+        }
+    }
+    for (const std::filesystem::path &path : paths) {
+        auto file = join_paths(path, filename);
+        if (std::filesystem::exists(file))
+            return file.string();
+    }
+    return std::string();
 }
-
-template <FileType file_type>
-bool find_file(std::string &out, const char *filename)
-{
-    static std::vector<const char*> prefixes;
-    static std::string str;
-    if constexpr(file_type == FileType::CONFIG) {
-        if (!prefixes.size()) {
-#ifdef __unix__
-            prefixes.resize(4);
-            join_paths(str, {getenv("HOME"), ".config", EXECUTABLE_TITLE});
-            prefixes[0] = CURRENT_DIRECTORY;
-            prefixes[1] = executable_dir;
-            prefixes[2] = str.c_str();
-            prefixes[3] = SYSTEM_SHARE_DIR;
-#endif
-#ifdef _WIN32
-            prefixes.resize(2);
-            prefixes[0] = ".\\";
-            prefixes[1] = executable_dir;
-#endif
-        }
-    }
-
-    if constexpr(file_type == FileType::FONT) {
-        if (!prefixes.size()) {
-#ifdef __unix__
-            prefixes.resize(2);
-            join_paths(str, {executable_dir, "assets", "fonts"});
-            prefixes[0] = str.c_str();
-            prefixes[1] = SYSTEM_FONTS_DIR;
-
-#endif
-#ifdef _WIN32
-            prefixes.resize(2);
-            join_paths(str, {executable_dir, "assets", "fonts"});
-            prefixes[0] = ".\\assets\\fonts";
-            prefixes[1] = str.c_str();
-#endif
-        }
-    }
-
-    if constexpr(file_type == FileType::AUDIO) {
-        if (!prefixes.size()) {
-#ifdef __unix__
-            prefixes.resize(2);
-            join_paths(str, {executable_dir, "assets", "sounds"});
-            prefixes[0] = str.c_str();
-            prefixes[1] = SYSTEM_SOUNDS_DIR;
-
-#endif
-#ifdef _WIN32
-            prefixes.resize(2);
-            join_paths(str, {executable_dir, "assets", "sounds"});
-            prefixes[0] = ".\\assets\\sounds";
-            prefixes[1] = str.c_str();
-#endif
-        }
-    }
-    for (const char *prefix : prefixes) {
-        join_paths(out, {prefix, filename});
-        if (std::filesystem::exists(out))
-            return true;
-    }
-    out.clear();
-    return false;
-}
-template bool find_file<FileType::CONFIG>(std::string &out, const char *filename);
-template bool find_file<FileType::FONT>(std::string &out, const char *filename);
-template bool find_file<FileType::AUDIO>(std::string &out, const char *filename);
+template std::string BL::find_file<BL::FileType::CONFIG>(const char *filename);
+template std::string BL::find_file<BL::FileType::FONT>(const char *filename);
+template std::string BL::find_file<BL::FileType::AUDIO>(const char *filename);

@@ -1,9 +1,13 @@
 cmake_minimum_required(VERSION 3.18)
+option(VCPKG "Build dependencies with vcpkg" OFF)
+if (VCPKG)
+  include("${CMAKE_SOURCE_DIR}/config/vcpkg.cmake")
+endif ()
 project("big-launcher"
-  LANGUAGES CXX
-  VERSION 0.2.1
+  LANGUAGES C CXX
+  VERSION 0.3
 )
-set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD 23)
 set(EXECUTABLE_TITLE "big-launcher")
 add_compile_definitions("$<$<CONFIG:DEBUG>:DEBUG>")
 if (WIN32)
@@ -23,24 +27,19 @@ endif ()
 # Find dependencies
 if (UNIX)
   find_package(PkgConfig MODULE REQUIRED)
-  pkg_check_modules(SDL2 REQUIRED IMPORTED_TARGET sdl2)
-  pkg_check_modules(SDL2_IMAGE REQUIRED IMPORTED_TARGET SDL2_image)
-  pkg_check_modules(SDL2_TTF REQUIRED IMPORTED_TARGET SDL2_ttf)
-  pkg_check_modules(SDL2_MIXER REQUIRED IMPORTED_TARGET SDL2_mixer)
+  pkg_check_modules(SDL3 REQUIRED IMPORTED_TARGET sdl3)
+  pkg_check_modules(SDL3_IMAGE REQUIRED IMPORTED_TARGET sdl3-image)
+  pkg_check_modules(SDL3_TTF REQUIRED IMPORTED_TARGET sdl3-ttf)
   pkg_check_modules(LIBXML2 REQUIRED IMPORTED_TARGET libxml-2.0)
-  pkg_check_modules(INIH REQUIRED IMPORTED_TARGET inih)
   pkg_check_modules(FMT REQUIRED IMPORTED_TARGET fmt)
   pkg_check_modules(SPDLOG REQUIRED IMPORTED_TARGET spdlog)
 elseif (WIN32)
-  find_package(SDL2 CONFIG REQUIRED)
-  find_package(sdl2_image CONFIG REQUIRED)
-  find_package(SDL2_ttf CONFIG REQUIRED)
-  find_package(SDL2_mixer CONFIG REQUIRED)
+  find_package(SDL3 CONFIG REQUIRED)
+  find_package(SDL3_image CONFIG REQUIRED)
+  find_package(SDL3_ttf CONFIG REQUIRED)
   find_package(fmt CONFIG REQUIRED)
   find_package(spdlog CONFIG REQUIRED)
-  find_package(LibXml2 REQUIRED)
-  find_package(unofficial-inih CONFIG REQUIRED)
-  
+  find_package(LibXml2 REQUIRED)  
   find_path(GETOPT_INCLUDE_DIR "getopt.h" REQUIRED)
   find_library(GETOPT getopt REQUIRED)
 
@@ -65,7 +64,8 @@ if (UNIX)
   set(CMD_RETROARCH "retroarch")
   set(CMD_MINECRAFT "minecraft")
 elseif (WIN32)
-  set(BROWSER_COMMAND "\"C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe\" --start-fullscreen --kiosk --user-agent=\"${HTML_USERAGENT}\"")
+  set(BROWSER_COMMAND "\"C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe\" --start-fullscreen --kiosk")
+  set(BROWSER_COMMAND_SMARTTV "\"C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe\" --start-fullscreen --kiosk --user-agent=\"${HTML_USERAGENT}\"")
   set(ICONS_DIR ".\\assets\\icons\\")
   set(CMD_KODI "\"C:\\Program Files\\Kodi\\kodi.exe\"")
   set(CMD_PLEX "\"C:\\Program Files\\Plex\\Plex Media Player\\PlexMediaPlayer.exe\"")
@@ -102,7 +102,7 @@ if (WIN32)
   endif()
   configure_file(
     "${PROJECT_SOURCE_DIR}/config/${EXECUTABLE_TITLE}.manifest.in" 
-	"${PROJECT_BINARY_DIR}/${EXECUTABLE_TITLE}.manifest"
+	  "${PROJECT_BINARY_DIR}/${EXECUTABLE_TITLE}.manifest"
   )
 endif()
 

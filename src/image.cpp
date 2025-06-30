@@ -1,12 +1,9 @@
-#include <math.h>
+#include <cmath>
 #include <algorithm>
-#include <SDL.h>
-#include <SDL_image.h>
-#include <fmt/core.h>
-#include <spdlog/spdlog.h>
-
+#include <SDL3/SDL.h>
+#include <SDL3_image/SDL_image.h>
+#include "logger.hpp"
 #include <lconfig.h>
-#include "main.hpp"
 #include "image.hpp"
 #include "util.hpp"
 #define NANOSVG_IMPLEMENTATION
@@ -15,34 +12,23 @@
 #include "external/nanosvgrast.h"
 #include "external/fast_gaussian_blur_template.h"
 
-SDL_Surface *rasterize_svg_image(NSVGimage *image, int w, int h);
-
-NSVGrasterizer *rasterizer = nullptr;
-extern char *executable_dir;
-
-SDL_Surface *load_surface(std::string &file)
+SDL_Surface* BL::load_surface(std::string &file)
 {
     SDL_Surface *img = nullptr;
     SDL_Surface *out = nullptr;
     img = IMG_Load(file.c_str());
-    if (img == nullptr) {
-        spdlog::error("Could not load image from {}", file);
-        spdlog::error("SDL Error: {}", IMG_GetError());
+    if (!img) {
+        BL::logger::error("Could not load image from {} (SDL Error: {})", file, SDL_GetError());
         return out;
     }
 
     // Convert the loaded surface if different pixel format
-    if (img->format->format != SDL_PIXELFORMAT_ARGB8888) {
-        out = SDL_CreateRGBSurfaceWithFormat(0,
-                  img->w,
-                  img->h,
-                  32,
-                  SDL_PIXELFORMAT_ARGB8888
-              );
-        Uint32 color = SDL_MapRGBA(out->format, 0xFF, 0xFF, 0xFF, 0);
-        SDL_FillRect(out, nullptr, color);
+    if (img->format != SDL_PIXELFORMAT_RGBA32) {
+        out = SDL_CreateSurface(img->w, img->h, SDL_PIXELFORMAT_RGBA32);
+        Uint32 color = SDL_MapSurfaceRGBA(out, 0xFF, 0xFF, 0xFF, 0);
+        SDL_FillSurfaceRect(out, nullptr, color);
         SDL_BlitSurface(img, nullptr, out, nullptr);
-        free_surface(img);
+        BL::free_surface(img);
     }
     else
         out = img;
@@ -50,45 +36,42 @@ SDL_Surface *load_surface(std::string &file)
     return out;
 }
 
-// A function to initalize SVG rasterization
-int init_svg()
+BL::SVGRasterizer::SVGRasterizer()
 {
     rasterizer = nsvgCreateRasterizer();
-    if (rasterizer == nullptr) {
-        spdlog::critical("Could not initialize SVG rasterizer");
-        return 1;
-    }
-    return 0;
+    if (!rasterizer)
+        BL::logger::critical("Could not initialize SVG rasterizer");
 }
 
-// A function to quit the SVG subsystem
-void quit_svg()
+BL::SVGRasterizer::~SVGRasterizer()
 {
-    nsvgDeleteRasterizer(rasterizer);
+    if (rasterizer)
+        nsvgDeleteRasterizer(rasterizer);
 }
 
-SDL_Surface *rasterize_svg_from_file(const std::string &file, int w, int h)
+
+SDL_Surface* BL::SVGRasterizer::rasterize_svg_from_file(const std::string &file, int w, int h)
 {
     NSVGimage *image = nsvgParseFromFile((char*) file.c_str(), "px", 96.0f);
-    if (image == nullptr) {
-        spdlog::error("Could not load SVG");
+    if (!image) {
+        BL::logger::error("Could not load SVG");
         return nullptr;
     }
     return rasterize_svg_image(image, w, h);
 }
 
 // A function to rasterize an SVG from an existing text buffer
-SDL_Surface *rasterize_svg(const std::string &buffer, int w, int h)
+SDL_Surface* BL::SVGRasterizer::rasterize_svg(const std::string &buffer, int w, int h)
 {
     NSVGimage *image = nsvgParse((char*) buffer.c_str(), "px", 96.0f);
-    if (image == nullptr) {
-        spdlog::error("Could not parse SVG");
+    if (!image) {
+        BL::logger::error("Could not parse SVG");
         return nullptr;
     }
     return rasterize_svg_image(image, w, h);
 }
 
-SDL_Surface *rasterize_svg_image(NSVGimage *image, int w, int h)
+SDL_Surface* BL::SVGRasterizer::rasterize_svg_image(NSVGimage *image, int w, int h)
 {
     unsigned char *pixel_buffer = nullptr;
     int width, height, pitch;
@@ -97,122 +80,66 @@ SDL_Surface *rasterize_svg_image(NSVGimage *image, int w, int h)
     // Calculate scaling and dimensions
     if (w == -1 && h == -1) {
         scale = 1.0f;
-        width = (int) image->width;
-        height = (int) image->height;
+        width = static_cast<int>(image->width);
+        height = static_cast<int>(image->height);
     }
     else if (w == -1 && h != -1) {
-        scale = (float) h / (float) image->height;
-        width = (int) ceil((double) image->width * (double) scale);
+        scale = static_cast<float>(h) / (float) image->height;
+        width = static_cast<int>(ceil(static_cast<double>(image->width * scale)));
         height = h;
     }
     else if (w != -1 && h == -1) {
-        scale = (float) w / (float) image->width;
+        scale = static_cast<float>(w) / image->width;
         width = w;
-        height = (int) ceil((double) image->height * (double) scale);
+        height = static_cast<int>(ceil(static_cast<double>(image->height * scale)));
     }
     else {
-        scale = (float) w / (float) image->width;
+        scale = static_cast<float>(w) / image->width;
         width = w;
         height = h;
     }
     
     // Allocate memory
     pitch = 4*width;
-    pixel_buffer = (unsigned char*) malloc(4*width*height);
-    if (pixel_buffer == nullptr) {
-        spdlog::error("Could not alloc SVG pixel buffer");
+    pixel_buffer = reinterpret_cast<unsigned char*>(malloc(4*width*height));
+    if (!pixel_buffer) {
+        BL::logger::error("Could not alloc SVG pixel buffer");
         return nullptr;
     }
 
     // Rasterize image
     nsvgRasterize(rasterizer, image, 0, 0, scale, pixel_buffer, width, height, pitch);
-    SDL_Surface *surface = SDL_CreateRGBSurfaceFrom(pixel_buffer,
+    SDL_Surface *surface = SDL_CreateSurfaceFrom(
                                width,
                                height,
-                               32,
-                               pitch,
-                               COLOR_MASKS
+                               SDL_PIXELFORMAT_RGBA32,
+                               pixel_buffer,
+                               pitch
                            );
     nsvgDelete(image);
     return surface;
 }
 
-int Font::load(const char *file, int height)
+NSVGimage* BL::SVGRasterizer::parse_from_file(const char* filename, const char* units, float dpi)
 {
-    std::string font_path;
-    if (!find_file<FileType::FONT>(font_path, file)) {
-        spdlog::critical("Could not locate font '{}'", file);
-        quit(EXIT_FAILURE);
-    }
-
-    font = TTF_OpenFont(font_path.c_str(), height);
-    if (!font) {
-        spdlog::error("Could not open font\nSDL Error: {}\n", TTF_GetError());
-        return 1;
-    }
-    return 0;
+    return nsvgParseFromFile(filename, units, dpi);
 }
 
-SDL_Surface *Font::render_text(const std::string &text, SDL_Rect *src_rect, SDL_Rect *dst_rect, int max_width)
+void BL::SVGRasterizer::delete_image(NSVGimage *image)
 {
-    SDL_Surface *surface = nullptr;
-    int width;
-    std::string truncated_text;
-    TTF_SizeUTF8(font, text.c_str(), &width, nullptr);
-    if (width > max_width)
-        truncated_text = utf8_truncate(text, width, max_width);
-    const std::string &out_text = truncated_text.empty() ? text : truncated_text;
-
-    surface = TTF_RenderUTF8_Blended(font, out_text.c_str(), color);
-    if (!surface) {
-        spdlog::error("Could not render text '{}'", text);
-        return surface;
-    } 
-    
-    if (src_rect != nullptr) {
-        int y_asc_max = 0;
-        int y_dsc_max = 0;
-        int y_asc, y_dsc;
-        int bytes = 0;
-        Uint16 code_point;
-        char *p = const_cast<char*>(out_text.data());
-        while (*p != '\0') {
-            code_point = get_unicode_code_point(p, bytes);
-            TTF_GlyphMetrics(font, 
-                code_point, 
-                nullptr, 
-                nullptr, 
-                &y_dsc, 
-                &y_asc,
-                nullptr
-            );
-            if (y_asc > y_asc_max)
-                y_asc_max = y_asc;
-            if (y_dsc < y_dsc_max)
-                y_dsc_max = y_dsc;
-            p += bytes;
-        }
-        src_rect->x = 0;
-        src_rect->y = TTF_FontAscent(font) - y_asc_max;
-        src_rect->w = surface->w;
-        src_rect->h = y_asc_max - y_dsc_max;
-    }
-    if (dst_rect != nullptr && surface != nullptr) {
-        dst_rect->w = surface->w;
-        dst_rect->h = (src_rect != nullptr) ? src_rect->h : surface->h;
-    }
-    return surface;
+    if (image)
+        nsvgDelete(image);
 }
 
 
-SDL_Surface* create_shadow(SDL_Surface *in, const std::vector<BoxShadow> &box_shadows, int s_offset)
+SDL_Surface* BL::create_shadow(SDL_Surface *in, const std::vector<BoxShadow> &box_shadows, int s_offset)
 {
     float max_radius = 0.0f;
     std::for_each(box_shadows.begin(), 
         box_shadows.end(), 
         [&](const BoxShadow &bs){if(bs.radius > max_radius) max_radius = bs.radius;}
     );
-    int padding = 2 * (int) ceil(max_radius);
+    int padding = 2 * static_cast<int>(ceil(max_radius));
 
     SDL_Color mod;
     SDL_GetSurfaceColorMod(in, &mod.r, &mod.g, &mod.b);
@@ -220,21 +147,19 @@ SDL_Surface* create_shadow(SDL_Surface *in, const std::vector<BoxShadow> &box_sh
     SDL_SetSurfaceColorMod(in, 0, 0, 0);
 
     // Set up shadow
-    SDL_Surface *shadow = SDL_CreateRGBSurfaceWithFormat(0, 
+    SDL_Surface *shadow = SDL_CreateSurface(
                               in->w + 2*s_offset, 
                               in->h + 2*s_offset, 
-                              32,
-                              SDL_PIXELFORMAT_ARGB8888
+                              SDL_PIXELFORMAT_RGBA32
                           );
-    Uint32 color = SDL_MapRGBA(shadow->format, 0, 0, 0, 0);
-    SDL_FillRect(shadow, nullptr, color);
+    Uint32 color = SDL_MapSurfaceRGBA(shadow, 0, 0, 0, 0);
+    SDL_FillSurfaceRect(shadow, nullptr, color);
 
     // Set up alpha mask
-    SDL_Surface *alpha_mask = SDL_CreateRGBSurfaceWithFormat(0, 
+    SDL_Surface *alpha_mask = SDL_CreateSurface(
                                   in->w + 2*(padding + s_offset), 
                                   in->h + 2*(padding + s_offset), 
-                                  32,
-                                  SDL_PIXELFORMAT_ARGB8888
+                                  SDL_PIXELFORMAT_RGBA32
                               );
     SDL_Rect alpha_mask_rect = {padding + s_offset, padding + s_offset, in->w, in->h};
     
@@ -248,44 +173,44 @@ SDL_Surface* create_shadow(SDL_Surface *in, const std::vector<BoxShadow> &box_sh
     for (const BoxShadow &bs : box_shadows) {
 
         // Make alpha mask
-        SDL_FillRect(alpha_mask, nullptr, color);
+        SDL_FillSurfaceRect(alpha_mask, nullptr, color);
         SDL_SetSurfaceAlphaMod(in, bs.alpha);
         SDL_BlitSurface(in, nullptr, alpha_mask, &alpha_mask_rect);
 
         // Blur alpha mask
-        in_pixels = (Uint8*) alpha_mask->pixels;
-        out_pixels = (Uint8*) malloc(alpha_mask->w*alpha_mask->h*4);
+        in_pixels = static_cast<Uint8*>(alpha_mask->pixels);
+        out_pixels = static_cast<Uint8*>(malloc(alpha_mask->w*alpha_mask->h*4));
         out_pixels0 = out_pixels;
         fast_gaussian_blur<Uint8>(in_pixels, out_pixels, alpha_mask->w, alpha_mask->h, 4, bs.radius);
-        tmp = SDL_CreateRGBSurfaceFrom(out_pixels,
+        tmp = SDL_CreateSurfaceFrom(
                   alpha_mask->w,
                   alpha_mask->h,
-                  32,
-                  alpha_mask->w*4,
-                  COLOR_MASKS
+                  SDL_PIXELFORMAT_RGBA32,
+                  out_pixels,
+                  alpha_mask->w*4
               );
 
         // Composit onto shadow surface
         w = alpha_mask->w - 2*padding - abs(bs.x_offset);
         h = alpha_mask->w - 2*padding - abs(bs.y_offset);
         src_rect = {
-            (bs.x_offset >= 0) ? padding : padding + bs.x_offset, 
-            (bs.y_offset >= 0) ? padding : padding + bs.y_offset, 
+            (bs.x_offset >= 0) ? padding : padding + static_cast<int>(bs.x_offset), 
+            (bs.y_offset >= 0) ? padding : padding + static_cast<int>(bs.y_offset), 
             w,
             h
         };
         dst_rect = {
-            (bs.x_offset > 0) ? bs.x_offset : 0,
-            (bs.y_offset > 0) ? bs.y_offset : 0,
+            (bs.x_offset > 0) ? static_cast<int>(bs.x_offset) : 0,
+            (bs.y_offset > 0) ? static_cast<int>(bs.y_offset) : 0,
             w,
             h
         };
         SDL_BlitSurface(tmp, &src_rect, shadow, &dst_rect);
         free(out_pixels0);
-        SDL_FreeSurface(tmp);
+        SDL_DestroySurface(tmp);
     }
 
-    free_surface(alpha_mask);
+    BL::free_surface(alpha_mask);
 
     SDL_SetSurfaceColorMod(in, mod.r, mod.g, mod.b);
     SDL_SetSurfaceAlphaMod(in, mod.a);
