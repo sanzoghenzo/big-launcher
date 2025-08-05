@@ -342,7 +342,7 @@ void BL::Launcher::create_window()
     window = SDL_CreateWindow(PROJECT_NAME,
                  dm->w,
                  dm->h,
-                 SDL_WINDOW_FULLSCREEN | SDL_WINDOW_BORDERLESS
+                 SDL_WINDOW_FULLSCREEN 
              );
     if (!window)
         BL::logger::critical("Could not create window (SDL Error: {})", SDL_GetError());
