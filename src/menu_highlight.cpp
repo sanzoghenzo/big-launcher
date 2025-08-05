@@ -1,4 +1,5 @@
 #include <string>
+#include <cmath>
 #include <fmt/core.h>
 
 #include "image.hpp"
@@ -22,18 +23,18 @@ void BL::MenuHighlight::render_surface(BL::SVGRasterizer &rasterizer, int w, int
     int h_inner = h - 2*t;
     int rx_outter = (int) std::round((float) w * MENU_HIGHLIGHT_RX);
     int rx_inner = rx_outter / 2;
-    
+
     // Render highlight
     SDL_Color mask_color = config.menu_highlight_color;
     mask_color.b & 0x01 ? mask_color.b-- : mask_color.b++;
-    std::string format = format_menu_highlight(w, 
-                             h, 
-                             config.menu_highlight_color, 
-                             mask_color, 
-                             w_inner, 
-                             h_inner, 
-                             t, 
-                             rx_outter, 
+    std::string format = format_menu_highlight(w,
+                             h,
+                             config.menu_highlight_color,
+                             mask_color,
+                             w_inner,
+                             h_inner,
+                             t,
+                             rx_outter,
                              rx_inner
                          );
     SDL_Surface *highlight = rasterizer.rasterize_svg(format, -1, -1);
@@ -56,7 +57,7 @@ void BL::MenuHighlight::render_surface(BL::SVGRasterizer &rasterizer, int w, int
     SDL_Rect blit_rect = {
         static_cast<int>(std::round(shadow_offset)),
         static_cast<int>(std::round(shadow_offset)),
-        highlight->w, 
+        highlight->w,
         highlight->h
     };
     SDL_BlitSurface(highlight, nullptr, surface, &blit_rect);

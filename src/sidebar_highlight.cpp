@@ -1,4 +1,5 @@
 #include <string>
+#include <cmath>
 #include <fmt/core.h>
 
 #include "sidebar_highlight.hpp"
